@@ -42,6 +42,19 @@ describe("classifyGenres", () => {
     expect(classifyGenres(["sci-fi", "to-read"])).toContain("scifi");
   });
 
+  it("does not call historical fantasy non-fiction or history", () => {
+    const genres = classifyGenres([
+      "Quests",
+      "Dragons",
+      "Fiction",
+      "FICTION / Fantasy / Historical",
+      "FICTION / Literary",
+    ]);
+    expect(genres).toEqual(expect.arrayContaining(["fantasy", "fiction"]));
+    expect(genres).not.toContain("history");
+    expect(genres).not.toContain("nonfiction");
+  });
+
   it("does not treat the juvenile SFF heading as sci-fi", () => {
     expect(classifyGenres(["Science Fiction, Fantasy, & Magic", "Vampires", "Juvenile Fiction"])).toEqual(
       expect.arrayContaining(["ya", "fantasy", "fiction"]),
@@ -49,5 +62,9 @@ describe("classifyGenres", () => {
     expect(classifyGenres(["Science Fiction, Fantasy, & Magic", "Vampires", "Juvenile Fiction"])).not.toContain(
       "scifi",
     );
+  });
+
+  it("returns nothing for empty tags", () => {
+    expect(classifyGenres([])).toEqual([]);
   });
 });

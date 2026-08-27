@@ -76,7 +76,8 @@ export function PicksStep({
           <div>
             <h2 className="font-display text-2xl">Most popular on this shelf</h2>
             <p className="text-sm text-ink-soft">
-              Google Books ratings for titles in the photo, not Goodreads.
+              Public ratings for titles in the photo (Google Books, or Open
+              Library when Google has none).
             </p>
           </div>
           <ol className="space-y-3">

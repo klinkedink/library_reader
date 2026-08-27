@@ -71,11 +71,11 @@ const SPECIFIC_RULES: GenreRule[] = [
   },
   {
     id: "romance",
-    phrases: ["romance", "love stories", "romantic"],
+    phrases: ["romance", "love stories"],
   },
   {
     id: "history",
-    phrases: ["history", "historical", "world war", "civil war"],
+    phrases: ["history", "world war", "civil war"],
   },
   {
     id: "biography",
