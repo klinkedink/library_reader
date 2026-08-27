@@ -25,7 +25,7 @@ export function getVisionProvider(): VisionProvider | null {
     return {
       id: "google",
       label: "Google",
-      model: google(override || "gemini-2.5-flash"),
+      model: google(override || "gemini-3.6-flash"),
     };
   }
   if (process.env.ANTHROPIC_API_KEY) {

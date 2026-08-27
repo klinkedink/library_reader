@@ -35,7 +35,7 @@ Spine reading needs **one** vision-capable provider. If none is set, the app sti
 | Variable | Used for |
 | --- | --- |
 | `OPENAI_API_KEY` | Primary. GPT-4o reads spines (best default). |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Used if OpenAI is unset. Gemini 2.5 Flash. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Used if OpenAI is unset. Gemini 3.6 Flash. |
 | `ANTHROPIC_API_KEY` | Used if the two above are unset. Claude Sonnet. |
 | `VISION_MODEL` | Optional override of the default model id for whichever provider is selected. |
 
