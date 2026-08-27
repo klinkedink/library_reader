@@ -1,4 +1,5 @@
 import type { BookMetadata } from "./types";
+import { fold } from "./normalize";
 
 const OL = "https://openlibrary.org";
 
@@ -49,18 +50,34 @@ async function fetchJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
   }
 }
 
+function isUsefulSubject(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 70) return false;
+  const folded = fold(trimmed);
+  if (folded.startsWith("series:") || folded.startsWith("nyt:")) return false;
+  if (folded.includes("bestseller")) return false;
+  return true;
+}
+
+function normalizeSubjectTag(raw: string): string[] {
+  if (/science fiction,\s*&?\s*fantasy/i.test(raw)) return ["Fantasy"];
+  return [raw];
+}
+
 function uniqueSubjects(lists: Array<string[] | undefined>): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const list of lists) {
     for (const raw of list ?? []) {
-      const key = raw.trim();
-      if (!key) continue;
-      const folded = key.toLowerCase();
-      if (seen.has(folded)) continue;
-      seen.add(folded);
-      out.push(key);
-      if (out.length >= 16) return out;
+      if (!isUsefulSubject(raw)) continue;
+      for (const tag of normalizeSubjectTag(raw)) {
+        const key = tag.trim();
+        const folded = key.toLowerCase();
+        if (seen.has(folded)) continue;
+        seen.add(folded);
+        out.push(key);
+        if (out.length >= 16) return out;
+      }
     }
   }
   return out;
@@ -139,7 +156,9 @@ export async function lookupBookMetadata(
   title: string,
   author: string,
 ): Promise<BookMetadata> {
-  const olUrl = `${OL}/search.json?title=${q(title)}${author ? `&author=${q(author)}` : ""}&limit=5`;
+  const fields =
+    "key,title,author_name,isbn,cover_i,subject,ratings_average,ratings_count,cover_edition_key";
+  const olUrl = `${OL}/search.json?title=${q(title)}${author ? `&author=${q(author)}` : ""}&limit=5&fields=${fields}`;
   const gq = `intitle:${title}${author ? ` inauthor:${author}` : ""}`;
   const gUrl = `https://www.googleapis.com/books/v1/volumes?q=${q(gq)}&maxResults=3`;
 
@@ -148,7 +167,32 @@ export async function lookupBookMetadata(
     fetchJson<{ items?: GoogleVolume[] }>(gUrl),
   ]);
 
-  return mergeBookMetadata(title, author, ol?.docs?.[0], pickGoogleVolume(google?.items, title));
+  let doc = ol?.docs?.[0] ?? null;
+  const workKey = doc?.key?.startsWith("/works/") ? doc.key : null;
+  const needsRatings = !(doc?.ratings_count || doc?.ratings_average);
+  const needsSubjects = !(doc?.subject && doc.subject.length);
+  if (workKey && (needsRatings || needsSubjects)) {
+    const [work, ratings] = await Promise.all([
+      needsSubjects
+        ? fetchJson<{ subjects?: string[] }>(`${OL}${workKey}.json`)
+        : Promise.resolve(null),
+      needsRatings
+        ? fetchJson<{ summary?: { average?: number; count?: number } }>(
+            `${OL}${workKey}/ratings.json`,
+          )
+        : Promise.resolve(null),
+    ]);
+    if (doc) {
+      doc = {
+        ...doc,
+        subject: doc.subject?.length ? doc.subject : work?.subjects,
+        ratings_average: doc.ratings_average ?? ratings?.summary?.average,
+        ratings_count: doc.ratings_count ?? ratings?.summary?.count,
+      };
+    }
+  }
+
+  return mergeBookMetadata(title, author, doc, pickGoogleVolume(google?.items, title));
 }
 
 export function goodreadsSearchUrl(title: string, author: string): string {

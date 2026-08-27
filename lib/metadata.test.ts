@@ -42,6 +42,26 @@ describe("mergeBookMetadata", () => {
     expect(meta.averageRating).toBe(4.2);
     expect(meta.ratingsCount).toBe(1500);
   });
+
+  it("drops series/nyt noise and does not call Twilight sci-fi", () => {
+    const meta = mergeBookMetadata(
+      "Twilight",
+      "Stephenie Meyer",
+      {
+        subject: [
+          "series:Twilight",
+          "nyt:series_books=2008-03-15",
+          "Vampires",
+          "Science Fiction, Fantasy, & Magic",
+          "Juvenile Fiction",
+        ],
+      },
+      null,
+    );
+    expect(meta.subjects.some((s) => s.startsWith("series:"))).toBe(false);
+    expect(meta.subjects).toContain("Fantasy");
+    expect(meta.subjects).toContain("Vampires");
+  });
 });
 
 describe("pickGoogleVolume", () => {

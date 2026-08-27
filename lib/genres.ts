@@ -123,7 +123,11 @@ function hasPhrase(hay: string, phrase: string): boolean {
 }
 
 export function classifyGenres(tags: string[]): ShelfGenreId[] {
-  const hay = haystack(tags);
+  const cleaned = tags.flatMap((tag) => {
+    if (/science fiction,\s*&?\s*fantasy/i.test(tag)) return ["Fantasy"];
+    return [tag];
+  });
+  const hay = haystack(cleaned);
   if (!hay.trim()) return [];
 
   const found = new Set<ShelfGenreId>();

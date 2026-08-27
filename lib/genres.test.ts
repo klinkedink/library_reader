@@ -42,7 +42,12 @@ describe("classifyGenres", () => {
     expect(classifyGenres(["sci-fi", "to-read"])).toContain("scifi");
   });
 
-  it("returns nothing for empty tags", () => {
-    expect(classifyGenres([])).toEqual([]);
+  it("does not treat the juvenile SFF heading as sci-fi", () => {
+    expect(classifyGenres(["Science Fiction, Fantasy, & Magic", "Vampires", "Juvenile Fiction"])).toEqual(
+      expect.arrayContaining(["ya", "fantasy", "fiction"]),
+    );
+    expect(classifyGenres(["Science Fiction, Fantasy, & Magic", "Vampires", "Juvenile Fiction"])).not.toContain(
+      "scifi",
+    );
   });
 });
