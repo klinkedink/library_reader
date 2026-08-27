@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+/**
+ * Every property must be required. OpenAI structured-output strict mode
+ * (and AI SDK's Zod conversion with `io: "input"`) rejects optional keys:
+ * required must list every key in properties. Use "" for unknown author.
+ */
 export const detectedSpineSchema = z.object({
   title: z
     .string()
@@ -8,15 +13,11 @@ export const detectedSpineSchema = z.object({
     ),
   author: z
     .string()
-    .optional()
-    .default("")
     .describe("Author as printed. Empty string if the author is not readable."),
   confidence: z
     .number()
     .min(0)
     .max(1)
-    .optional()
-    .default(0.5)
     .describe(
       "0.9+ clearly readable, 0.6-0.89 likely, 0.25-0.59 only part of the spine is readable. Never omit a book just because confidence is low.",
     ),
