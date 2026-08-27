@@ -1,9 +1,8 @@
 "use client";
 
-import { useObject } from "@ai-sdk/react";
-import { useMemo, useState, useSyncExternalStore, useEffect } from "react";
-import { z } from "zod";
-import { compressImageFile } from "@/lib/image";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { extractTileDataUrl, planPhotoTiles, prepareBookshelfPhoto } from "@/lib/image";
+import { identifyTile } from "@/lib/identify-client";
 import { rankShelf } from "@/lib/ranking";
 import { dedupeDetected, newBookId } from "@/lib/shelf";
 import {
@@ -12,8 +11,8 @@ import {
   subscribeTaste,
   writeTaste,
 } from "@/lib/taste-store";
+import { TILE_CONCURRENCY, runPool } from "@/lib/tiles";
 import type { BookMetadata, DetectedBook, RankingResult } from "@/lib/types";
-import { detectedSpineSchema } from "@/lib/vision";
 import { LogoMark } from "./LogoMark";
 import { PhotoStep } from "./PhotoStep";
 import { PicksStep } from "./PicksStep";
@@ -21,24 +20,6 @@ import { TasteStep } from "./TasteStep";
 import { StepPips } from "./Chrome";
 
 type Step = "taste" | "photo" | "picks";
-
-function spinesFromStream(
-  object: Array<{ title?: string; author?: string; confidence?: number } | undefined> | undefined,
-): DetectedBook[] {
-  if (!object) return [];
-  return dedupeDetected(
-    object
-      .filter((book): book is { title: string; author?: string; confidence?: number } =>
-        Boolean(book?.title),
-      )
-      .map((book) => ({
-        id: `${book.title}|${book.author ?? ""}`.toLowerCase(),
-        title: book.title,
-        author: book.author ?? "",
-        confidence: book.confidence ?? 0.5,
-      })),
-  );
-}
 
 export function ShelfPickApp() {
   const taste = useSyncExternalStore(
@@ -50,21 +31,15 @@ export function ShelfPickApp() {
   const [visionConfigured, setVisionConfigured] = useState(false);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [shelf, setShelf] = useState<DetectedBook[]>([]);
-  const [liveStream, setLiveStream] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [ranking, setRanking] = useState<RankingResult | null>(null);
   const [metadata, setMetadata] = useState<Record<string, BookMetadata>>({});
   const [rankingBusy, setRankingBusy] = useState(false);
-
-  const { object, submit, isLoading, error, stop, clear } = useObject({
-    api: "/api/identify",
-    schema: z.array(detectedSpineSchema),
-    onFinish: (event) => {
-      const next = spinesFromStream(event.object);
-      if (next.length > 0) setShelf(next);
-      setLiveStream(false);
-    },
-  });
+  const [identifying, setIdentifying] = useState(false);
+  const [identifyFinished, setIdentifyFinished] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const stopRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/health")
@@ -73,39 +48,91 @@ export function ShelfPickApp() {
       .catch(() => setVisionConfigured(false));
   }, []);
 
-  const streamed = useMemo(() => spinesFromStream(object), [object]);
-  const visibleShelf = liveStream ? streamed : shelf;
-
-  const errorMessage = useMemo(() => {
-    if (localError) return localError;
-    if (!error) return null;
-    const msg = error.message || "Could not read that photo.";
-    if (msg.toLowerCase().includes("503") || msg.toLowerCase().includes("missing")) {
-      return "No vision key is configured. Type the spines you can read, or add an API key and retry.";
-    }
-    return msg;
-  }, [error, localError]);
+  function stopIdentify() {
+    stopRef.current = true;
+    abortRef.current?.abort();
+  }
 
   async function onPickFile(file: File) {
+    stopIdentify();
+    const run = new AbortController();
+    abortRef.current = run;
+    stopRef.current = false;
+
     setLocalError(null);
     setRanking(null);
+    setShelf([]);
+    setIdentifyFinished(false);
+    setProgress(null);
+
     try {
-      const { dataUrl } = await compressImageFile(file);
-      setPhotoDataUrl(dataUrl);
-      setShelf([]);
-      setLiveStream(true);
-      clear();
-      if (!visionConfigured) {
-        setLiveStream(false);
-        setLocalError(
-          "No vision model key on the server. Photograph is saved — add titles by hand, or set OPENAI_API_KEY.",
-        );
-        return;
+      const { source, previewDataUrl } = await prepareBookshelfPhoto(file);
+      setPhotoDataUrl(previewDataUrl);
+
+      const tiles = planPhotoTiles(source);
+      console.info("[shelf-pick] tiles", {
+        count: tiles.length,
+        source: { width: source.width, height: source.height },
+        tiles: tiles.map((tile) => ({
+          row: tile.row,
+          col: tile.col,
+          w: tile.width,
+          h: tile.height,
+        })),
+      });
+      setIdentifying(true);
+      setProgress({ done: 0, total: tiles.length });
+
+      const collected: DetectedBook[] = [];
+      let fatal: Error | null = null;
+      let lastWarning: string | null = null;
+      let finished = 0;
+
+      await runPool(
+        tiles,
+        TILE_CONCURRENCY,
+        async (tile) => {
+          if (stopRef.current || fatal) return;
+          try {
+            const dataUrl = extractTileDataUrl(source, tile);
+            const books = await identifyTile(dataUrl, run.signal);
+            collected.push(...books);
+            setShelf(dedupeDetected(collected));
+          } catch (err) {
+            if (run.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+              return;
+            }
+            const error = err as Error & { fatal?: boolean; status?: number; kind?: string };
+            console.error("[shelf-pick] identify tile failed", {
+              message: error.message,
+              fatal: error.fatal,
+              status: error.status,
+              kind: error.kind,
+            });
+            if (error.fatal) {
+              fatal = error;
+              stopRef.current = true;
+              run.abort();
+              setLocalError(error.message);
+              return;
+            }
+            lastWarning = error.message;
+          } finally {
+            finished += 1;
+            setProgress({ done: finished, total: tiles.length });
+          }
+        },
+        () => stopRef.current,
+      );
+
+      if (!fatal && collected.length === 0 && lastWarning) {
+        setLocalError(lastWarning);
       }
-      submit({ image: dataUrl });
     } catch (err) {
-      setLiveStream(false);
       setLocalError(err instanceof Error ? err.message : "Couldn't use that photo.");
+    } finally {
+      setIdentifying(false);
+      setIdentifyFinished(true);
     }
   }
 
@@ -128,9 +155,9 @@ export function ShelfPickApp() {
     setRankingBusy(true);
     setLocalError(null);
     try {
-      const meta = await fetchMetadata(visibleShelf);
+      const meta = await fetchMetadata(shelf);
       setMetadata(meta);
-      const withIsbn = visibleShelf.map((book) => ({
+      const withIsbn = shelf.map((book) => ({
         ...book,
         isbn: book.isbn || meta[book.id]?.isbn || null,
       }));
@@ -184,34 +211,26 @@ export function ShelfPickApp() {
         <PhotoStep
           taste={taste}
           visionConfigured={visionConfigured}
-          identifying={isLoading}
+          identifying={identifying}
+          identifyFinished={identifyFinished}
+          progress={progress}
           rankingBusy={rankingBusy}
           photoDataUrl={photoDataUrl}
-          shelf={visibleShelf}
-          error={errorMessage}
+          shelf={shelf}
+          error={localError}
           onReplaceTaste={replaceTaste}
           onPickFile={onPickFile}
-          onChangeBook={(id, patch) => {
-            setLiveStream(false);
+          onChangeBook={(id, patch) =>
+            setShelf((current) => current.map((b) => (b.id === id ? { ...b, ...patch } : b)))
+          }
+          onRemoveBook={(id) => setShelf((current) => current.filter((b) => b.id !== id))}
+          onAddBook={(title, author) =>
             setShelf((current) =>
-              (current.length ? current : streamed).map((b) => (b.id === id ? { ...b, ...patch } : b)),
-            );
-          }}
-          onRemoveBook={(id) => {
-            setLiveStream(false);
-            setShelf((current) => (current.length ? current : streamed).filter((b) => b.id !== id));
-          }}
-          onAddBook={(title, author) => {
-            setLiveStream(false);
-            setShelf((current) =>
-              dedupeDetected([
-                ...(current.length ? current : streamed),
-                { id: newBookId(), title, author, confidence: 1 },
-              ]),
-            );
-          }}
+              dedupeDetected([...current, { id: newBookId(), title, author, confidence: 1 }]),
+            )
+          }
           onRank={onRank}
-          onStop={stop}
+          onStop={stopIdentify}
         />
       ) : null}
 
@@ -222,11 +241,13 @@ export function ShelfPickApp() {
           metadata={metadata}
           onReplaceTaste={replaceTaste}
           onNewPhoto={() => {
+            stopIdentify();
             setPhotoDataUrl(null);
             setShelf([]);
             setRanking(null);
-            setLiveStream(false);
-            clear();
+            setIdentifyFinished(false);
+            setProgress(null);
+            setLocalError(null);
             setStep("photo");
           }}
           onBack={() => setStep("photo")}

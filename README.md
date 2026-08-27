@@ -7,7 +7,7 @@ This is a personal picker, not a "people who bought this also bought" engine. Th
 ## What it does
 
 1. **Taste** — Upload your official Goodreads library CSV (or, as a lighter fallback, paste a public Goodreads profile URL).
-2. **Photo** — Take a picture of a real shelf on your phone, or upload one. A vision model reads titles and authors from spines. You can fix misses before ranking.
+2. **Photo** — Take a picture of a real shelf *or a whole closet* on your phone, or upload one. Shelf Pick keeps a high-resolution copy. A 1–2 shelf photo is read as 1–2 tiles; a tall closet is split into overlapping shelf bands (and wide bays left/right). Each tile is identified at high res. Titles fill in as bands finish. Key/model failures show in the Photo UI (status included). You can fix misses before ranking.
 3. **Picks** — Get 3–7 books *on that shelf* that fit how you actually read, with a short specific reason. Titles you already logged as read are marked read, not recommended.
 
 Taste lives in `localStorage` in your browser. It is not uploaded except the CSV parse (client-side) and the optional public RSS fetch.

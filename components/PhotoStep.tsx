@@ -8,6 +8,8 @@ export function PhotoStep({
   taste,
   visionConfigured,
   identifying,
+  identifyFinished,
+  progress,
   photoDataUrl,
   shelf,
   error,
@@ -23,6 +25,8 @@ export function PhotoStep({
   taste: TasteProfile;
   visionConfigured: boolean;
   identifying: boolean;
+  identifyFinished: boolean;
+  progress: { done: number; total: number } | null;
   photoDataUrl: string | null;
   shelf: DetectedBook[];
   error: string | null;
@@ -46,17 +50,20 @@ export function PhotoStep({
     setDraftAuthor("");
   }
 
+  const emptyAfterRead =
+    Boolean(photoDataUrl) && !identifying && identifyFinished && shelf.length === 0 && !error;
+
   return (
     <section className="space-y-5">
       <div>
         <p className="text-[11px] uppercase tracking-[0.18em] text-wine">Step 2</p>
         <h1 className="font-display mt-1 text-[2rem] leading-tight">
-          Photograph the shelf in front of you
+          Photograph the closet in front of you
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
-          One bay works better than a whole wall. Get close enough that spines
-          are readable. The photo is the inventory — we only rank what&apos;s in
-          the frame.
+          A whole bookcase is fine — eight or twelve shelves in a second-hand
+          shop, or a single bay. We read it shelf by shelf and only rank what&apos;s
+          in the frame.
         </p>
       </div>
 
@@ -124,7 +131,17 @@ export function PhotoStep({
 
       {identifying ? (
         <div className="flex items-center justify-between gap-3 text-sm text-ink-soft">
-          <p>Reading spines — titles appear as they resolve.</p>
+          <p>
+            {progress
+              ? `${
+                  progress.total <= 2
+                    ? `Reading this shelf (${progress.done}/${progress.total})`
+                    : `Reading band ${Math.min(progress.total, progress.done + 1)} of ${progress.total}`
+                }${
+                  shelf.length ? ` — ${shelf.length} title${shelf.length === 1 ? "" : "s"} so far` : ""
+                }`
+              : "Preparing the photo…"}
+          </p>
           <GhostButton onClick={onStop} className="min-h-9 px-3 text-xs">
             Stop
           </GhostButton>
@@ -132,27 +149,30 @@ export function PhotoStep({
       ) : null}
 
       {error ? (
-        <p className="rounded-md border border-stamp/40 bg-card px-3 py-2 text-sm text-stamp">
-          {error}
-        </p>
+        <div className="rounded-md border border-stamp/40 bg-card px-3 py-2 text-sm text-stamp">
+          <p className="font-medium text-stamp">Identify failed</p>
+          <p className="mt-1 leading-relaxed">{error}</p>
+        </div>
       ) : null}
 
       <div>
         <div className="flex items-end justify-between gap-2">
-          <h2 className="font-display text-xl">This shelf</h2>
+          <h2 className="font-display text-xl">In the frame</h2>
           <p className="text-xs text-ink-soft">
             {shelf.length === 0
               ? identifying
-                ? "Waiting on the first spine…"
+                ? "Waiting on the first band…"
                 : "Nothing detected yet"
               : `${shelf.length} title${shelf.length === 1 ? "" : "s"}`}
           </p>
         </div>
 
-        {shelf.length === 0 && !identifying && photoDataUrl ? (
+        {emptyAfterRead ? (
           <p className="mt-2 text-sm text-ink-soft">
-            No readable spines yet. Type a title you can see — OCR misses happen
-            on tight or dim shelves.
+            Finished reading this photo and the model returned no titles. That is
+            a miss, not a request for a closer shot — type a title you can see,
+            or retry. A key or model failure would show an error above, not this
+            empty list.
           </p>
         ) : null}
 

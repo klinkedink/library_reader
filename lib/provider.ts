@@ -16,7 +16,9 @@ export function getVisionProvider(): VisionProvider | null {
     return {
       id: "openai",
       label: "OpenAI",
-      model: openai(override || "gpt-4o"),
+      // Chat Completions: more reliable for vision + Output.object than the
+      // default Responses API wrapper (`openai('gpt-4o')`).
+      model: openai.chat(override || "gpt-4o"),
     };
   }
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
