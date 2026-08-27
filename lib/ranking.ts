@@ -1,5 +1,6 @@
 import type {
   DetectedBook,
+  GenreShelfGroup,
   GoodreadsBook,
   RankedShelfBook,
   RankingResult,
@@ -22,9 +23,19 @@ import {
   isRead,
   type TasteModel,
 } from "./taste";
+import { classifyGenres, genreLabel, SHELF_GENRE_IDS, type ShelfGenreId } from "./genres";
+import { popularityReason, popularityScore, type PopularityInfo } from "./popularity";
 
 const MAX_PICKS = 7;
-const MIN_PICK_SCORE = 14;
+const MIN_PICKS = 3;
+
+export type { PopularityInfo };
+
+function pickThreshold(librarySize: number): number {
+  if (librarySize <= 12) return 5;
+  if (librarySize <= 30) return 8;
+  return 14;
+}
 
 export function findLibraryMatch(
   book: DetectedBook,
@@ -106,15 +117,29 @@ function subjectTokens(subjects: string[] | undefined): string[] {
   return (subjects ?? []).map((s) => fold(s).replace(/\s+/g, "-")).filter(Boolean);
 }
 
+function tasteGenreSet(model: TasteModel): Set<ShelfGenreId> {
+  const tags = [...model.shelfWeights.keys()];
+  return new Set(classifyGenres(tags));
+}
+
 export function scoreDetectedBook(
   detected: DetectedBook,
   model: TasteModel,
   subjects: string[] = [],
+  popularity: PopularityInfo | null = null,
 ): RankedShelfBook {
   const match = findLibraryMatch(detected, model.books);
   const kind = kindFor(match);
   const reasons: string[] = [];
   let score = 0;
+  const tags = [
+    ...subjects,
+    ...(match?.bookshelves.filter(isGenreShelf) ?? []),
+  ];
+  const genres = classifyGenres(tags);
+  const popScore = popularityScore(popularity);
+  const avg = popularity?.averageRating ?? null;
+  const count = popularity?.ratingsCount ?? null;
 
   if (kind === "already-read" || kind === "currently-reading") {
     if (kind === "already-read") {
@@ -126,7 +151,17 @@ export function scoreDetectedBook(
     } else {
       reasons.push("You're currently reading this on Goodreads.");
     }
-    return { book: detected, score: 0, reasons, kind, matchedLibrary: match };
+    return {
+      book: detected,
+      score: 0,
+      reasons,
+      kind,
+      matchedLibrary: match,
+      popularityScore: popScore,
+      averageRating: avg,
+      ratingsCount: count,
+      genres,
+    };
   }
 
   const authorStats = findAuthorStats(model, detected.author);
@@ -190,8 +225,26 @@ export function scoreDetectedBook(
     reasons.push(shelfReason(bestShelf.shelf, bestShelf.example));
   }
 
+  const likedGenres = tasteGenreSet(model);
+  const overlap = genres.filter(
+    (genre) => likedGenres.has(genre) && genre !== "fiction" && genre !== "nonfiction",
+  );
+  if (overlap.length && score >= 0) {
+    score += 8 + overlap.length * 3;
+    const label = genreLabel(overlap[0]);
+    if (!reasons.some((r) => r.toLowerCase().includes(label.toLowerCase()))) {
+      reasons.push(`Fits the ${label} books you rate highly.`);
+    }
+  }
+
+  if (popScore >= 18 && score > 0) {
+    const pop = popularityReason(popularity);
+    if (pop) reasons.push(`Also widely read (${pop.replace(/\.$/, "")}).`);
+  }
+
   const uniqueReasons = [...new Set(reasons)].slice(0, 2);
-  const finalKind: ShelfMatchKind = kind === "queued" ? "queued" : score >= MIN_PICK_SCORE ? "pick" : "weak";
+  const threshold = pickThreshold(model.books.length);
+  const finalKind: ShelfMatchKind = kind === "queued" ? "queued" : score >= threshold ? "pick" : "weak";
 
   return {
     book: detected,
@@ -199,13 +252,34 @@ export function scoreDetectedBook(
     reasons: uniqueReasons,
     kind: finalKind,
     matchedLibrary: match,
+    popularityScore: popScore,
+    averageRating: avg,
+    ratingsCount: count,
+    genres,
   };
+}
+
+function isDisliked(row: RankedShelfBook): boolean {
+  return row.score < 0;
+}
+
+function recommendable(row: RankedShelfBook): boolean {
+  return (
+    row.kind !== "already-read" &&
+    row.kind !== "currently-reading" &&
+    !isDisliked(row)
+  );
+}
+
+function combinedScore(row: RankedShelfBook): number {
+  return row.score + row.popularityScore * 1.4;
 }
 
 export function rankShelf(
   detected: DetectedBook[],
   library: GoodreadsBook[],
   subjectMap: Record<string, string[]> = {},
+  popularityMap: Record<string, PopularityInfo> = {},
 ): RankingResult {
   const model = buildTasteModel(library);
   const seen = new Set<string>();
@@ -216,16 +290,27 @@ export function rankShelf(
     if (seen.has(key)) continue;
     seen.add(key);
     const subjects = subjectMap[book.id] ?? [];
-    ranked.push(scoreDetectedBook(book, model, subjects));
+    ranked.push(scoreDetectedBook(book, model, subjects, popularityMap[book.id] ?? null));
   }
 
   const alreadyRead = ranked.filter((r) => r.kind === "already-read");
   const currentlyReading = ranked.filter((r) => r.kind === "currently-reading");
-  const candidates = ranked
-    .filter((r) => r.kind === "pick" || r.kind === "queued")
-    .sort((a, b) => b.score - a.score);
+  const threshold = pickThreshold(library.length);
 
-  const picks = candidates.filter((r) => r.score >= MIN_PICK_SCORE).slice(0, MAX_PICKS);
+  const candidates = ranked
+    .filter((r) => r.kind === "pick" || r.kind === "queued" || (recommendable(r) && r.score > 0))
+    .sort((a, b) => b.score - a.score || b.popularityScore - a.popularityScore);
+
+  let picks = candidates.filter((r) => r.kind === "queued" || r.score >= threshold);
+  if (picks.length < MIN_PICKS) {
+    const extra = candidates.filter((r) => !picks.includes(r) && r.score > 0);
+    picks = [...picks, ...extra];
+  }
+  picks = picks.slice(0, MAX_PICKS);
+  for (const pick of picks) {
+    if (pick.kind === "weak") pick.kind = "pick";
+  }
+
   const pickIds = new Set(picks.map((p) => p.book.id));
   const rest = ranked.filter(
     (r) =>
@@ -234,5 +319,44 @@ export function rankShelf(
       !pickIds.has(r.book.id),
   );
 
-  return { picks, alreadyRead, currentlyReading, rest };
+  const popular = [...ranked]
+    .filter((r) => r.averageRating || (r.ratingsCount && r.ratingsCount > 0))
+    .sort((a, b) => b.popularityScore - a.popularityScore)
+    .slice(0, 7)
+    .map((row) => {
+      const pop = popularityReason({
+        averageRating: row.averageRating,
+        ratingsCount: row.ratingsCount,
+      });
+      return {
+        ...row,
+        reasons: pop ? [pop, ...row.reasons.filter((reason) => reason !== pop)].slice(0, 2) : row.reasons,
+      };
+    });
+
+  const genres: GenreShelfGroup[] = [];
+  for (const id of SHELF_GENRE_IDS) {
+    const books = ranked
+      .filter((row) => row.genres.includes(id))
+      .sort((a, b) => {
+        const aRec = Number(recommendable(a));
+        const bRec = Number(recommendable(b));
+        if (bRec !== aRec) return bRec - aRec;
+        return combinedScore(b) - combinedScore(a);
+      })
+      .slice(0, 3);
+    if (books.length === 0) continue;
+    genres.push({ id, label: genreLabel(id), books });
+  }
+
+  return {
+    picks,
+    popular,
+    genres,
+    alreadyRead,
+    currentlyReading,
+    rest,
+    tasteBookCount: library.length,
+    ratedCount: library.filter((book) => book.myRating > 0).length,
+  };
 }

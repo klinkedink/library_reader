@@ -1,3 +1,5 @@
+import type { ShelfGenreId } from "./genres";
+
 export type TasteSource = "csv" | "rss";
 
 export type GoodreadsBook = {
@@ -34,6 +36,8 @@ export type BookMetadata = {
   isbn: string | null;
   openLibraryUrl: string | null;
   subjects: string[];
+  averageRating: number | null;
+  ratingsCount: number | null;
 };
 
 export type ShelfMatchKind =
@@ -50,13 +54,27 @@ export type RankedShelfBook = {
   kind: ShelfMatchKind;
   matchedLibrary: GoodreadsBook | null;
   metadata?: BookMetadata;
+  popularityScore: number;
+  averageRating: number | null;
+  ratingsCount: number | null;
+  genres: ShelfGenreId[];
+};
+
+export type GenreShelfGroup = {
+  id: ShelfGenreId;
+  label: string;
+  books: RankedShelfBook[];
 };
 
 export type RankingResult = {
   picks: RankedShelfBook[];
+  popular: RankedShelfBook[];
+  genres: GenreShelfGroup[];
   alreadyRead: RankedShelfBook[];
   currentlyReading: RankedShelfBook[];
   rest: RankedShelfBook[];
+  tasteBookCount: number;
+  ratedCount: number;
 };
 
 export type TasteSummary = {

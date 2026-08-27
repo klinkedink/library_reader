@@ -162,10 +162,16 @@ export function ShelfPickApp() {
         isbn: book.isbn || meta[book.id]?.isbn || null,
       }));
       const subjectMap: Record<string, string[]> = {};
+      const popularityMap: Record<string, { averageRating: number | null; ratingsCount: number | null }> = {};
       for (const book of withIsbn) {
-        subjectMap[book.id] = meta[book.id]?.subjects ?? [];
+        const info = meta[book.id];
+        subjectMap[book.id] = info?.subjects ?? [];
+        popularityMap[book.id] = {
+          averageRating: info?.averageRating ?? null,
+          ratingsCount: info?.ratingsCount ?? null,
+        };
       }
-      setRanking(rankShelf(withIsbn, taste.books, subjectMap));
+      setRanking(rankShelf(withIsbn, taste.books, subjectMap, popularityMap));
       setStep("picks");
     } catch {
       setLocalError("Could not finish ranking. Check the titles and try again.");

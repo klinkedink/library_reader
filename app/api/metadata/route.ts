@@ -8,10 +8,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const books = (body.books ?? []).slice(0, 24);
+  const books = (body.books ?? []).slice(0, 48);
   const entries: [string, Awaited<ReturnType<typeof lookupBookMetadata>>][] = [];
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(4, books.length) }, async () => {
+      const workers = Array.from({ length: Math.min(5, books.length) }, async () => {
     while (cursor < books.length) {
       const index = cursor;
       cursor += 1;

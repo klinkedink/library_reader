@@ -107,4 +107,65 @@ describe("rankShelf", () => {
     expect(result.picks.length).toBeLessThanOrEqual(7);
     expect(result.picks.map((p) => p.book.title)).not.toContain("The Martian");
   });
+
+  it("still recommends from a small Goodreads sample using author, to-read, and subjects", () => {
+    const tiny = library.filter((book) =>
+      ["Never Let Me Go", "The Remains of the Day", "The Left Hand of Darkness", "Klara and the Sun"].includes(
+        book.title,
+      ),
+    );
+    expect(tiny).toHaveLength(4);
+    const result = rankShelf(
+      [
+        detected("buried", "The Buried Giant", "Kazuo Ishiguro"),
+        detected("ancillary", "Ancillary Justice", "Ann Leckie"),
+        detected("klara", "Klara and the Sun", "Kazuo Ishiguro"),
+      ],
+      tiny,
+      { ancillary: ["Science fiction", "Space opera"] },
+    );
+    expect(result.tasteBookCount).toBe(4);
+    expect(result.picks.map((p) => p.book.title)).toEqual(
+      expect.arrayContaining(["The Buried Giant", "Klara and the Sun", "Ancillary Justice"]),
+    );
+    expect(result.picks.map((p) => p.book.title)).not.toContain("Never Let Me Go");
+  });
+
+  it("ranks most popular independently of taste and skips empty genres", () => {
+    const result = rankShelf(
+      [
+        detected("twilight", "Twilight", "Stephenie Meyer"),
+        detected("narnia", "The Lion, the Witch and the Wardrobe", "C.S. Lewis"),
+        detected("rich", "Think and Grow Rich", "Napoleon Hill"),
+        detected("martian", "The Martian", "Andy Weir"),
+      ],
+      library,
+      {
+        twilight: ["Young Adult Fiction", "Fantasy fiction", "Vampires"],
+        narnia: ["Fantasy", "Juvenile Fiction", "Children"],
+        rich: ["Self-Help", "Success", "Business"],
+        martian: ["Science fiction"],
+      },
+      {
+        twilight: { averageRating: 4.6, ratingsCount: 90_000 },
+        narnia: { averageRating: 4.4, ratingsCount: 40_000 },
+        rich: { averageRating: 4.2, ratingsCount: 12_000 },
+        martian: { averageRating: 4.4, ratingsCount: 80_000 },
+      },
+    );
+
+    expect(result.popular[0].book.title).toBe("Twilight");
+    expect(result.popular.map((p) => p.book.title)).toContain("The Martian");
+    expect(result.genres.map((g) => g.id)).toEqual(
+      expect.arrayContaining(["fiction", "fantasy", "scifi", "selfhelp", "ya", "nonfiction"]),
+    );
+    expect(result.genres.map((g) => g.id)).not.toContain("romance");
+    const ya = result.genres.find((g) => g.id === "ya");
+    expect(ya?.books.length).toBeGreaterThanOrEqual(1);
+    expect(ya?.books.length).toBeLessThanOrEqual(3);
+    expect(result.genres.find((g) => g.id === "selfhelp")?.books[0].book.title).toBe(
+      "Think and Grow Rich",
+    );
+    expect(result.picks.map((p) => p.book.title)).not.toContain("The Martian");
+  });
 });

@@ -72,12 +72,12 @@ If you only have a public profile URL (`https://www.goodreads.com/user/show/1234
 
 ## How ranking works
 
-- Highly rated authors are a strong match for unread books on the photographed shelf.
-- Books on your Goodreads **to-read** list that appear on the shelf are called out as already queued.
-- Exclusive shelf `read` (or a Date Read) → **already read**, never a pick.
-- Currently-reading stays marked, not recommended.
-- User shelves on 4–5★ books (and Open Library subjects, when available) add a secondary genre signal.
-- Reasons are generated from those signals ("You rated 2 books by Kazuo Ishiguro 5.0★…"), not generic fluff.
+The photographed shelf is the inventory. Ranking never invents books that were not in the photo.
+
+- **For you (3–7)** — Rated authors, Goodreads subjects/shelves, and to-read matches. Works with a small CSV sample. The Picks screen shows “based on N books”. Exclusive shelf `read` (or a Date Read) is already-read and never recommended. Currently-reading is marked, not recommended.
+- **Most popular on this shelf** — Google Books `averageRating` + `ratingsCount` (Open Library ratings if Google has none). A Bayesian score so a 5★ with three votes does not beat a 4.4★ with tens of thousands.
+- **By genre** — Fiction, Non-fiction, Fantasy, Sci-fi, Mystery/thriller, Romance, History, Biography/memoir, Self-help, Travel, and YA, when those genres actually appear on this shelf. Each genre lists the top 1–3 by taste + popularity. Empty genres are omitted.
+- Reasons stay specific (“You rated 2 books by Kazuo Ishiguro 5.0★…”), not generic fluff.
 
 ## Deploy on Vercel
 
