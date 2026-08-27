@@ -5,7 +5,7 @@ import { parseGoodreadsCsv } from "@/lib/csv";
 import { writeTaste } from "@/lib/taste-store";
 import { summarizeTaste } from "@/lib/taste";
 import type { GoodreadsBook, TasteProfile } from "@/lib/types";
-import { PrimaryButton } from "./Chrome";
+import { GhostButton, PrimaryButton } from "./Chrome";
 
 export function TasteStep({
   onImported,
@@ -116,14 +116,17 @@ export function TasteStep({
             onChange={(e) => onFile(e.target.files?.[0])}
           />
         </label>
-        <button
+        <GhostButton
           type="button"
           onClick={onDemo}
           disabled={busy}
-          className="mt-3 w-full text-center text-sm text-wine underline decoration-gold underline-offset-4"
+          className="mt-3 w-full"
         >
-          Or try the labeled demo library
-        </button>
+          Try the labeled demo library
+        </GhostButton>
+        <p className="mt-2 text-center text-xs text-ink-soft">
+          Sample CSV for demo — not a real Goodreads account.
+        </p>
       </div>
 
       <details className="rounded-lg border border-dashed border-rule bg-card/50 p-4">

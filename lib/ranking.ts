@@ -175,7 +175,6 @@ export function scoreDetectedBook(
   const detectedSubjects = new Set([
     ...subjectTokens(subjects),
     ...(match?.bookshelves.filter(isGenreShelf).map((s) => fold(s).replace(/\s+/g, "-")) ?? []),
-    ...(authorStats?.shelves.map((s) => fold(s).replace(/\s+/g, "-")) ?? []),
   ]);
 
   let bestShelf: { shelf: string; weight: number; example: GoodreadsBook } | null = null;
